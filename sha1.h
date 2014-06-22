@@ -1,5 +1,6 @@
 //sha1.h：对字符串进行sha1加密 
-#ifndef _SHA1_H_ #define _SHA1_H_  
+#ifndef _SHA1_H_ 
+#define _SHA1_H_  
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <string.h>   

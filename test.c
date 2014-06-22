@@ -5,6 +5,7 @@
 #include <unistd.h> 
 #include <sys/socket.h> 
 #include <netinet/in.h>  
+#include <pthread.h>
 #include "base64.h" 
 #include "sha1.h" 
 #include "intLib.h"   
@@ -13,24 +14,30 @@
 #define WEB_SOCKET_KEY_LEN_MAX 256 
 #define RESPONSE_HEADER_LEN_MAX 1024 
 #define LINE_MAX 256   
+#define MAX_CONN 50
 void shakeHand(int connfd,const char *serverKey);
 char * fetchSecKey(const char * buf);
 char * computeAcceptKey(const char * buf);
 char * analyData(const char * buf,const int bufLen);
 char * packData(const char * message,unsigned long * len);
 void response(const int connfd,const char * message);
+void * worker(void);
+int i;
+int connfd[MAX_CONN];
 int main(int argc, char *argv[]) 
 {
 	struct sockaddr_in servaddr, cliaddr;
 	socklen_t cliaddr_len;
-	int listenfd, connfd;
+	int listenfd;
 	char buf[REQUEST_LEN_MAX];
 	char *data;
 	char str[INET_ADDRSTRLEN];
 	char *secWebSocketKey;
-	int i,n;
+	int n;
 	int connected=0;//0:not connect.1:connected. 
 	int port= DEFEULT_SERVER_PORT;
+	pthread_t tids;
+
 	if(argc>1) 
   	{
   		port=atoi(argv[1]);
@@ -49,27 +56,41 @@ int main(int argc, char *argv[])
 	listen(listenfd, 20);
 	printf("Listen %d\nAccepting connections ...\n",port);
 	cliaddr_len = sizeof(cliaddr);
-	connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &cliaddr_len);
-	printf("From %s at PORT %d\n", inet_ntop(AF_INET, &cliaddr.sin_addr, str, sizeof(str)), ntohs(cliaddr.sin_port));
-	while (1) 
-  	{
- 		memset(buf,0,REQUEST_LEN_MAX);
- 		n = read(connfd, buf, REQUEST_LEN_MAX);
+
+	i = 0;
+
+	pthread_create(&tids,NULL,worker,NULL);
+	while(1){
+		connfd[i] = accept(listenfd, (struct sockaddr *)&cliaddr, &cliaddr_len);
+		printf("From %s at PORT %d\n", inet_ntop(AF_INET, &cliaddr.sin_addr, str, sizeof(str)), ntohs(cliaddr.sin_port));
+		memset(buf,0,REQUEST_LEN_MAX);
+		n = read(connfd[i], buf, REQUEST_LEN_MAX);
 		printf("---------------------\n");
-		if(0 == connected) 
-		{
-   			printf("read:%d\n%s\n",n,buf);
-			secWebSocketKey=computeAcceptKey(buf);
-			shakeHand(connfd,secWebSocketKey);
-			connected=1;
-			continue;
- 		}
- 		data=analyData(buf,n);
-		printf("myout: %s\n",data);
-		response(connfd,data);
- 	} 
- 	close(connfd);
+		printf("read:%d\n%s\n",n,buf);
+		secWebSocketKey=computeAcceptKey(buf);
+		shakeHand(connfd[i],secWebSocketKey);
+		i += 1;
+	}
  }
+
+void * worker(void)
+{
+	char *data =(char*) malloc(10);
+	int j = 0,k;
+	while (1)
+  	{
+		sprintf(data,"%d",j);
+ 		printf("i = %d,myout: %s\n",i,data);
+		for(k = 0;k < i;k++){
+			response(connfd[k],data);
+		}
+		j = (j + 1) % 10;
+		sleep(1);
+ 	} 
+	for(k = 0;k < i;k++){
+	 	close(connfd[k]);
+	}
+}
 
 char * fetchSecKey(const char * buf)
 {
